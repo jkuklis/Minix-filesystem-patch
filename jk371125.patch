@@ -1,0 +1,243 @@
+diff -rupN minix/servers/sched/schedproc.h minix2/servers/sched/schedproc.h
+--- minix/servers/sched/schedproc.h	2017-05-25 18:47:36.000000000 +0200
++++ minix2/servers/sched/schedproc.h	2017-05-25 19:14:57.288432595 +0200
+@@ -2,7 +2,7 @@
+  * for each process.
+  */
+ #include <limits.h>
+-
++#include <sys/types.h>
+ #include <minix/bitmap.h>
+ 
+ /* EXTERN should be extern except in main.c, where we want to keep the struct */
+@@ -33,6 +33,9 @@ EXTERN struct schedproc {
+ 	bitchunk_t cpu_mask[BITMAP_CHUNKS(CONFIG_MAX_CPUS)]; /* what CPUs is the
+ 								process allowed
+ 								to run on */
++	clock_t tokens;	/* SO */
++	clock_t last_checked; /* SO */
++
+ } schedproc[NR_PROCS];
+ 
+ /* Flag values */
+diff -rupN minix/servers/sched/schedule.c minix2/servers/sched/schedule.c
+--- minix/servers/sched/schedule.c	2017-05-25 18:47:36.000000000 +0200
++++ minix2/servers/sched/schedule.c	2017-05-25 19:15:26.725099260 +0200
+@@ -14,10 +14,18 @@
+ #include <machine/archtypes.h>
+ #include "kernel/proc.h" /* for queue constants */
+ 
++#include <minix/syslib.h> /* SO */
++#include <time.h> /* SO */
++
+ static minix_timer_t sched_timer;
+ static unsigned balance_timeout;
+ 
+ #define BALANCE_TIMEOUT	5 /* how often to balance queues in seconds */
++#define MAX_TOKENS 6 /* SO */
++#define SCHED_FACTOR 0.5 /* SO */
++
++static unsigned first_to_get; /* SO */
++static clock_t last_filled; /* SO */
+ 
+ static int schedule_process(struct schedproc * rmp, unsigned flags);
+ static void balance_queues(minix_timer_t *tp);
+@@ -53,7 +61,7 @@ static void pick_cpu(struct schedproc *
+ #ifdef CONFIG_SMP
+ 	unsigned cpu, c;
+ 	unsigned cpu_load = (unsigned) -1;
+-	
++
+ 	if (machine.processors_count == 1) {
+ 		proc->cpu = machine.bsp_id;
+ 		return;
+@@ -83,6 +91,57 @@ static void pick_cpu(struct schedproc *
+ #endif
+ }
+ 
++/* SO */
++
++static void refill_tokens() {
++	struct schedproc *rmp;
++
++	clock_t user_time;
++	clock_t sys_time;
++	clock_t uptime;
++	time_t boottime;
++
++	int time_check = sys_times(NONE, &user_time, &sys_time, &uptime, &boottime);
++
++	clock_t curr_time = uptime;
++
++	clock_t tokens = SCHED_FACTOR * (curr_time - last_filled);
++	last_filled = curr_time;
++
++	if (NR_PROCS >= first_to_get) {
++		first_to_get = 0;
++	}
++
++	int current = first_to_get;
++
++	for (int i = 0; i < NR_PROCS; i++) {
++		if (tokens == 0) {
++			break;
++		}
++
++		rmp = &(schedproc[current]);
++
++		clock_t difference = MAX_TOKENS - rmp->tokens;
++
++		if (difference > tokens) {
++			rmp->tokens += difference;
++			tokens = 0;
++			break;
++
++		} else {
++			rmp->tokens = MAX_TOKENS;
++			tokens -= difference;
++		}
++
++		current++;
++		if (current == NR_PROCS) {
++			current = 0;
++		}
++	}
++}
++
++/* SO */
++
+ /*===========================================================================*
+  *				do_noquantum				     *
+  *===========================================================================*/
+@@ -92,6 +151,8 @@ int do_noquantum(message *m_ptr)
+ 	register struct schedproc *rmp;
+ 	int rv, proc_nr_n;
+ 
++	refill_tokens();
++
+ 	if (sched_isokendpt(m_ptr->m_source, &proc_nr_n) != OK) {
+ 		printf("SCHED: WARNING: got an invalid endpoint in OOQ msg %u.\n",
+ 		m_ptr->m_source);
+@@ -99,6 +160,23 @@ int do_noquantum(message *m_ptr)
+ 	}
+ 
+ 	rmp = &schedproc[proc_nr_n];
++
++	/* SO */
++
++	clock_t user_time;
++	clock_t sys_time;
++	clock_t uptime;
++	time_t boottime;
++
++	int time_check = sys_times(rmp->endpoint, &user_time, &sys_time, &uptime, &boottime);
++
++	clock_t difference = sys_time - rmp->last_checked;
++
++	rmp->last_checked = sys_time;
++	rmp->tokens -= difference;
++
++	/* SO */
++
+ 	if (rmp->priority < MIN_USER_Q) {
+ 		rmp->priority += 1; /* lower priority */
+ 	}
+@@ -144,9 +222,9 @@ int do_start_scheduling(message *m_ptr)
+ {
+ 	register struct schedproc *rmp;
+ 	int rv, proc_nr_n, parent_nr_n;
+-	
++
+ 	/* we can handle two kinds of messages here */
+-	assert(m_ptr->m_type == SCHEDULING_START || 
++	assert(m_ptr->m_type == SCHEDULING_START ||
+ 		m_ptr->m_type == SCHEDULING_INHERIT);
+ 
+ 	/* check who can send you requests */
+@@ -161,6 +239,9 @@ int do_start_scheduling(message *m_ptr)
+ 	rmp = &schedproc[proc_nr_n];
+ 
+ 	/* Populate process slot */
++	rmp->tokens = MAX_TOKENS; /* SO */
++	rmp->last_checked = 0; /* SO */
++
+ 	rmp->endpoint     = m_ptr->m_lsys_sched_scheduling_start.endpoint;
+ 	rmp->parent       = m_ptr->m_lsys_sched_scheduling_start.parent;
+ 	rmp->max_priority = m_ptr->m_lsys_sched_scheduling_start.maxprio;
+@@ -188,17 +269,17 @@ int do_start_scheduling(message *m_ptr)
+ 		/* FIXME set the cpu mask */
+ #endif
+ 	}
+-	
++
+ 	switch (m_ptr->m_type) {
+ 
+ 	case SCHEDULING_START:
+ 		/* We have a special case here for system processes, for which
+-		 * quanum and priority are set explicitly rather than inherited 
++		 * quanum and priority are set explicitly rather than inherited
+ 		 * from the parent */
+ 		rmp->priority   = rmp->max_priority;
+ 		rmp->time_slice = m_ptr->m_lsys_sched_scheduling_start.quantum;
+ 		break;
+-		
++
+ 	case SCHEDULING_INHERIT:
+ 		/* Inherit current priority and time slice from parent. Since there
+ 		 * is currently only one scheduler scheduling the whole system, this
+@@ -210,8 +291,8 @@ int do_start_scheduling(message *m_ptr)
+ 		rmp->priority = schedproc[parent_nr_n].priority;
+ 		rmp->time_slice = schedproc[parent_nr_n].time_slice;
+ 		break;
+-		
+-	default: 
++
++	default:
+ 		/* not reachable */
+ 		assert(0);
+ 	}
+@@ -319,6 +400,15 @@ static int schedule_process(struct sched
+ 	else
+ 		new_cpu = -1;
+ 
++	/* SO */
++
++	if (rmp->tokens > 0)
++		new_quantum = rmp->time_slice;
++	else
++		new_quantum = -1;
++
++	/* SO */
++
+ 	if ((err = sys_schedule(rmp->endpoint, new_prio,
+ 		new_quantum, new_cpu)) != OK) {
+ 		printf("PM: An error occurred when trying to schedule %d: %d\n",
+@@ -335,6 +425,19 @@ static int schedule_process(struct sched
+ 
+ void init_scheduling(void)
+ {
++	/* SO */
++
++	first_to_get = 0;
++	clock_t user_time;
++	clock_t sys_time;
++	clock_t uptime;
++	time_t boottime;
++
++	int time_check = sys_times(NONE, &user_time, &sys_time, &uptime, &boottime);
++	last_filled = uptime;
++
++	/* SO */
++
+ 	balance_timeout = BALANCE_TIMEOUT * sys_hz();
+ 	init_timer(&sched_timer);
+ 	set_timer(&sched_timer, balance_timeout, balance_queues, 0);
+@@ -354,6 +457,8 @@ static void balance_queues(minix_timer_t
+ 	struct schedproc *rmp;
+ 	int proc_nr;
+ 
++	refill_tokens(); /* SO */
++
+ 	for (proc_nr=0, rmp=schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
+ 		if (rmp->flags & IN_USE) {
+ 			if (rmp->priority > rmp->max_priority) {
