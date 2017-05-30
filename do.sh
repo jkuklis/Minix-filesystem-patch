@@ -1,5 +1,5 @@
 cd /usr/src
-cp /root/minix/jk371125.patch
+cp /root/minix/jk371125.patch .
 patch -p0 -f < jk371125.patch
 cd minix
 make && make install
