@@ -1,6 +1,6 @@
 diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 --- minix/fs/mfs/read.c	2017-05-25 18:47:29.000000000 +0200
-+++ minix2/fs/mfs/read.c	2017-05-30 20:23:28.902650285 +0200
++++ minix2/fs/mfs/read.c	2017-05-30 20:41:44.558709321 +0200
 @@ -34,9 +34,9 @@ int fs_readwrite(void)
    int completed;
    struct inode *rip;
@@ -162,15 +162,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
    int n, block_spec;
    block_t b;
    dev_t dev;
-@@ -258,6 +262,7 @@ int *completed;			/* number of bytes cop
- 	ino = rip->i_num;
- 	assert(ino != VMC_NO_INODE);
-   }
-+  panic("lol\n");
- 
-   if (!block_spec && b == NO_BLOCK) {
- 	if (rw_flag == READING) {
-@@ -269,6 +274,20 @@ int *completed;			/* number of bytes cop
+@@ -269,6 +273,21 @@ int *completed;			/* number of bytes cop
  		}
  		return r;
  	} else {
@@ -178,6 +170,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 +        if (rw_flag == WRITING) {
 +            r_own = sys_safecopyfrom(VFS_PROC_NR, gid, (vir_bytes) buf_off,
 +        			     (vir_bytes) (b_data(bp_own)), (size_t) chunk);
++			printf("lol\n");
 +            while (count_own < (size_t) chunk) {
 +                if (b_data(bp_own) + count_own)
 +                    break;
