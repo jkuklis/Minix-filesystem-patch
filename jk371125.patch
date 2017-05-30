@@ -1,6 +1,6 @@
 diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 --- minix/fs/mfs/read.c	2017-05-25 18:47:29.000000000 +0200
-+++ minix2/fs/mfs/read.c	2017-05-30 21:45:02.002913938 +0200
++++ minix2/fs/mfs/read.c	2017-05-30 21:48:04.606923777 +0200
 @@ -34,9 +34,9 @@ int fs_readwrite(void)
    int completed;
    struct inode *rip;
@@ -171,7 +171,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 +            r_own = sys_safecopyfrom(VFS_PROC_NR, gid, (vir_bytes) buf_off,
 +        			     (vir_bytes) (b_data(bp_own)), (size_t) chunk);
 +            while (count_own < (size_t) chunk) {
-+				printf("%c ", *((char *)bp_own->b_data + count_own));
++				printf("%c_", *(b_data(bp_own) + count_own));
 +
 +                count_own++;
 +            }
