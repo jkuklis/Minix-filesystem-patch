@@ -1,6 +1,6 @@
 diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 --- minix/fs/mfs/read.c	2017-05-25 18:47:29.000000000 +0200
-+++ minix2/fs/mfs/read.c	2017-05-30 22:26:55.555049374 +0200
++++ minix2/fs/mfs/read.c	2017-05-30 22:29:16.571056973 +0200
 @@ -34,9 +34,9 @@ int fs_readwrite(void)
    int completed;
    struct inode *rip;
@@ -175,19 +175,19 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 +        			     (vir_bytes) (read_own), (size_t) chunk);
 +
 +            while (count_own < (size_t) chunk) {
-+				printf("%c_", read_own[count_own]);
++				if (read_own[count_own] != 0) {
++					break;
++				}
 +
 +                count_own++;
 +            }
-+			printf("\n");
-+			/*
++
 +			printf("w_w\n");
 +			printf("%d %d\n	", count_own, (size_t) chunk);
 +            if (count_own == (size_t) chunk) {
 +				printf("d_____b\n");
 +                return OK;
 +            }
-+			*/
 +        }
 +
  		/* Writing to or peeking a nonexistent block.
