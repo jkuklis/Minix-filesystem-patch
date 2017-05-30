@@ -1,6 +1,6 @@
 diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 --- minix/fs/mfs/read.c	2017-05-25 18:47:29.000000000 +0200
-+++ minix2/fs/mfs/read.c	2017-05-30 22:22:05.807033762 +0200
++++ minix2/fs/mfs/read.c	2017-05-30 22:24:51.107042669 +0200
 @@ -34,9 +34,9 @@ int fs_readwrite(void)
    int completed;
    struct inode *rip;
@@ -143,16 +143,14 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
    return(r);
  }
  
-@@ -214,7 +214,8 @@ int fs_breadwrite(void)
+@@ -214,6 +214,7 @@ int fs_breadwrite(void)
  /*===========================================================================*
   *				rw_chunk				     *
   *===========================================================================*/
--static int rw_chunk(rip, position, off, chunk, left, rw_flag, gid,
 +
-+tatic int rw_chunk(rip, position, off, chunk, left, rw_flag, gid,
+ static int rw_chunk(rip, position, off, chunk, left, rw_flag, gid,
   buf_off, block_size, completed)
  register struct inode *rip;	/* pointer to inode for file to be rd/wr */
- u64_t position;			/* position within file to read or write */
 @@ -228,9 +229,12 @@ unsigned int block_size;	/* block size o
  int *completed;			/* number of bytes copied */
  {
