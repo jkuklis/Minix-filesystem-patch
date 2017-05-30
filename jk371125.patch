@@ -1,6 +1,6 @@
 diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 --- minix/fs/mfs/read.c	2017-05-25 18:47:29.000000000 +0200
-+++ minix2/fs/mfs/read.c	2017-05-30 20:51:32.614741007 +0200
++++ minix2/fs/mfs/read.c	2017-05-30 21:00:18.110769323 +0200
 @@ -34,9 +34,9 @@ int fs_readwrite(void)
    int completed;
    struct inode *rip;
@@ -162,15 +162,15 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
    int n, block_spec;
    block_t b;
    dev_t dev;
-@@ -259,6 +263,7 @@ int *completed;			/* number of bytes cop
+@@ -258,6 +262,7 @@ int *completed;			/* number of bytes cop
+ 	ino = rip->i_num;
  	assert(ino != VMC_NO_INODE);
    }
++  printf("lol_1\n");
  
-+	//printf("lol\n");
    if (!block_spec && b == NO_BLOCK) {
  	if (rw_flag == READING) {
- 		/* Reading from a nonexistent block.  Must read as all zeros.*/
-@@ -269,6 +274,21 @@ int *completed;			/* number of bytes cop
+@@ -269,6 +274,22 @@ int *completed;			/* number of bytes cop
  		}
  		return r;
  	} else {
@@ -187,12 +187,13 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 +            if (count_own == (size_t) chunk) {
 +                return OK;
 +            }
++			printf("lol_3\n");
 +        }
 +
  		/* Writing to or peeking a nonexistent block.
  		 * Create and enter in inode.
  		 */
-@@ -284,7 +304,7 @@ int *completed;			/* number of bytes cop
+@@ -284,7 +305,7 @@ int *completed;			/* number of bytes cop
  	 * the cache, acquire it, otherwise just acquire a free buffer.
  	 */
  	n = (chunk == block_size ? NO_READ : NORMAL);
@@ -201,7 +202,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
  		n = NO_READ;
  	if(block_spec) {
  		assert(ino == VMC_NO_INODE);
-@@ -298,7 +318,7 @@ int *completed;			/* number of bytes cop
+@@ -298,7 +319,7 @@ int *completed;			/* number of bytes cop
  
    /* In all cases, bp now points to a valid buffer. */
    assert(bp != NULL);
@@ -210,7 +211,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
    if (rw_flag == WRITING && chunk != block_size && !block_spec &&
        (off_t) ex64lo(position) >= rip->i_size && off == 0) {
  	zero_block(bp);
-@@ -314,7 +334,7 @@ int *completed;			/* number of bytes cop
+@@ -314,7 +335,7 @@ int *completed;			/* number of bytes cop
  			     (vir_bytes) (b_data(bp)+off), (size_t) chunk);
  	MARKDIRTY(bp);
    }
@@ -219,7 +220,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
    n = (off + chunk == block_size ? FULL_DATA_BLOCK : PARTIAL_DATA_BLOCK);
    put_block(bp, n);
  
-@@ -438,7 +458,7 @@ int index;			/* index into *bp */
+@@ -438,7 +459,7 @@ int index;			/* index into *bp */
  	       (long) zone, index);
  	panic("check file system");
    }
@@ -228,7 +229,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
    return(zone);
  }
  
-@@ -483,13 +503,13 @@ unsigned bytes_ahead;		/* bytes beyond p
+@@ -483,13 +504,13 @@ unsigned bytes_ahead;		/* bytes beyond p
    }
  
    block_spec = (rip->i_mode & I_TYPE) == I_BLOCK_SPECIAL;
@@ -245,7 +246,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
    block_size = get_block_size(dev);
  
    block = baseblock;
-@@ -573,7 +593,7 @@ unsigned bytes_ahead;		/* bytes beyond p
+@@ -573,7 +594,7 @@ unsigned bytes_ahead;		/* bytes beyond p
  	block++;
  	position_running += block_size;
  
@@ -254,7 +255,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
  	  (thisblock = read_map(rip, (off_t) ex64lo(position_running), 1)) != NO_BLOCK) {
  	  	bp = lmfs_get_block_ino(dev, thisblock, PREFETCH, rip->i_num, position_running);
  	} else {
-@@ -625,8 +645,8 @@ int fs_getdents(void)
+@@ -625,8 +646,8 @@ int fs_getdents(void)
    /* Check whether the position is properly aligned */
    if( (unsigned int) pos % DIR_ENTRY_SIZE)
  	  return(ENOENT);
@@ -265,7 +266,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
  	  return(EINVAL);
  
    block_size = rip->i_sp->s_block_size;
-@@ -653,7 +673,7 @@ int fs_getdents(void)
+@@ -653,7 +674,7 @@ int fs_getdents(void)
  	  else
  		  dp = &b_dir(bp)[0];
  	  for (; dp < &b_dir(bp)[NR_DIR_ENTRIES(block_size)]; dp++) {
@@ -274,7 +275,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
  			  continue;	/* Entry is not in use */
  
  		  /* Compute the length of the name */
-@@ -662,7 +682,7 @@ int fs_getdents(void)
+@@ -662,7 +683,7 @@ int fs_getdents(void)
  			  len = sizeof(dp->mfs_d_name);
  		  else
  			  len = cp - (dp->mfs_d_name);
@@ -283,7 +284,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
  		  /* Compute record length; also does alignment. */
  		  reclen = _DIRENT_RECLEN(dep, len);
  
-@@ -683,7 +703,7 @@ int fs_getdents(void)
+@@ -683,7 +704,7 @@ int fs_getdents(void)
  
  		if (tmpbuf_off + reclen >= GETDENTS_BUFSIZE*GETDENTS_ENTRIES) {
  			  r = sys_safecopyto(VFS_PROC_NR, gid,
@@ -292,7 +293,7 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
  					     (vir_bytes) getdents_buf,
  					     (size_t) tmpbuf_off);
  			  if (r != OK) {
-@@ -742,4 +762,3 @@ int fs_getdents(void)
+@@ -742,4 +763,3 @@ int fs_getdents(void)
    put_inode(rip);		/* release the inode */
    return(r);
  }
