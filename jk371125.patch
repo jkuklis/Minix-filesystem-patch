@@ -1,6 +1,6 @@
 diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 --- minix/fs/mfs/read.c	2017-05-25 18:47:29.000000000 +0200
-+++ minix2/fs/mfs/read.c	2017-05-30 21:06:46.090790228 +0200
++++ minix2/fs/mfs/read.c	2017-05-30 21:08:53.914797115 +0200
 @@ -34,9 +34,9 @@ int fs_readwrite(void)
    int completed;
    struct inode *rip;
@@ -175,8 +175,8 @@ diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
 +                    break;
 +                count_own++;
 +            }
-+			printf("d_____b");
 +            if (count_own == (size_t) chunk) {
++				printf("d_____b");
 +                return OK;
 +            }
 +        }
