@@ -1,243 +1,290 @@
-diff -rupN minix/servers/sched/schedproc.h minix2/servers/sched/schedproc.h
---- minix/servers/sched/schedproc.h	2017-05-25 18:47:36.000000000 +0200
-+++ minix2/servers/sched/schedproc.h	2017-05-25 19:14:57.288432595 +0200
-@@ -2,7 +2,7 @@
-  * for each process.
-  */
- #include <limits.h>
--
-+#include <sys/types.h>
- #include <minix/bitmap.h>
- 
- /* EXTERN should be extern except in main.c, where we want to keep the struct */
-@@ -33,6 +33,9 @@ EXTERN struct schedproc {
- 	bitchunk_t cpu_mask[BITMAP_CHUNKS(CONFIG_MAX_CPUS)]; /* what CPUs is the
- 								process allowed
- 								to run on */
-+	clock_t tokens;	/* SO */
-+	clock_t last_checked; /* SO */
+diff -rupN minix/fs/mfs/read.c minix2/fs/mfs/read.c
+--- minix/fs/mfs/read.c	2017-05-25 18:47:29.000000000 +0200
++++ minix2/fs/mfs/read.c	2017-05-30 16:33:21.471209556 +0200
+@@ -34,9 +34,9 @@ int fs_readwrite(void)
+   int completed;
+   struct inode *rip;
+   size_t nrbytes;
+-  
 +
- } schedproc[NR_PROCS];
- 
- /* Flag values */
-diff -rupN minix/servers/sched/schedule.c minix2/servers/sched/schedule.c
---- minix/servers/sched/schedule.c	2017-05-25 18:47:36.000000000 +0200
-+++ minix2/servers/sched/schedule.c	2017-05-25 19:15:26.725099260 +0200
-@@ -14,10 +14,18 @@
- #include <machine/archtypes.h>
- #include "kernel/proc.h" /* for queue constants */
- 
-+#include <minix/syslib.h> /* SO */
-+#include <time.h> /* SO */
+   r = OK;
+-  
 +
- static minix_timer_t sched_timer;
- static unsigned balance_timeout;
- 
- #define BALANCE_TIMEOUT	5 /* how often to balance queues in seconds */
-+#define MAX_TOKENS 6 /* SO */
-+#define SCHED_FACTOR 0.5 /* SO */
+   /* Find the inode referred */
+   if ((rip = find_inode(fs_dev, fs_m_in.m_vfs_fs_readwrite.inode)) == NULL)
+ 	return(EINVAL);
+@@ -44,7 +44,7 @@ int fs_readwrite(void)
+   mode_word = rip->i_mode & I_TYPE;
+   regular = (mode_word == I_REGULAR || mode_word == I_NAMED_PIPE);
+   block_spec = (mode_word == I_BLOCK_SPECIAL ? 1 : 0);
+-  
 +
-+static unsigned first_to_get; /* SO */
-+static clock_t last_filled; /* SO */
+   /* Determine blocksize */
+   if (block_spec) {
+ 	block_size = get_block_size( (dev_t) rip->i_zone[0]);
+@@ -54,7 +54,7 @@ int fs_readwrite(void)
+   	f_size = rip->i_size;
+   }
  
- static int schedule_process(struct schedproc * rmp, unsigned flags);
- static void balance_queues(minix_timer_t *tp);
-@@ -53,7 +61,7 @@ static void pick_cpu(struct schedproc *
- #ifdef CONFIG_SMP
- 	unsigned cpu, c;
- 	unsigned cpu_load = (unsigned) -1;
--	
+-  /* Get the values from the request message */ 
++  /* Get the values from the request message */
+   switch(fs_m_in.m_type) {
+   	case REQ_READ: rw_flag = READING; break;
+   	case REQ_WRITE: rw_flag = WRITING; break;
+@@ -69,7 +69,7 @@ int fs_readwrite(void)
+ 
+   /* If this is file i/o, check we can write */
+   if (rw_flag == WRITING && !block_spec) {
+-  	  if(rip->i_sp->s_rd_only) 
++  	  if(rip->i_sp->s_rd_only)
+ 		  return EROFS;
+ 
+ 	  /* Check in advance to see if file will grow too big. */
+@@ -87,7 +87,7 @@ int fs_readwrite(void)
+   if(block_spec && rw_flag == WRITING &&
+   	(dev_t) rip->i_zone[0] == superblock.s_dev && superblock.s_rd_only)
+ 		return EROFS;
+-	      
 +
- 	if (machine.processors_count == 1) {
- 		proc->cpu = machine.bsp_id;
- 		return;
-@@ -83,6 +91,57 @@ static void pick_cpu(struct schedproc *
- #endif
+   cum_io = 0;
+   /* Split the transfer into chunks that don't span two blocks. */
+   while (nrbytes > 0) {
+@@ -99,7 +99,7 @@ int fs_readwrite(void)
+ 		  if (position >= f_size) break;	/* we are beyond EOF */
+ 		  if (chunk > (unsigned int) bytes_left) chunk = bytes_left;
+ 	  }
+-	  
++
+ 	  /* Read or write 'chunk' bytes. */
+ 	  r = rw_chunk(rip, ((u64_t)((unsigned long)position)), off, chunk,
+ 	  	       nrbytes, rw_flag, gid, cum_io, block_size, &completed);
+@@ -116,20 +116,20 @@ int fs_readwrite(void)
+   fs_m_out.m_fs_vfs_readwrite.seek_pos = position; /* It might change later and
+ 						    the VFS has to know this
+ 						    value */
+-  
++
+   /* On write, update file size and access time. */
+   if (rw_flag == WRITING) {
+ 	  if (regular || mode_word == I_DIRECTORY) {
+ 		  if (position > f_size) rip->i_size = position;
+ 	  }
+-  } 
++  }
+ 
+   rip->i_seek = NO_SEEK;
+ 
+   if (lmfs_rdwt_err() != OK) r = lmfs_rdwt_err();	/* check for disk error */
+   if (lmfs_rdwt_err() == END_OF_FILE) r = OK;
+ 
+-  /* even on a ROFS, writing to a device node on it is fine, 
++  /* even on a ROFS, writing to a device node on it is fine,
+    * just don't update the inode stats for it. And dito for reading.
+    */
+   if (r == OK && !rip->i_sp->s_rd_only) {
+@@ -137,9 +137,9 @@ int fs_readwrite(void)
+ 	  if (rw_flag == WRITING) rip->i_update |= CTIME | MTIME;
+ 	  IN_MARKDIRTY(rip);		/* inode is thus now dirty */
+   }
+-  
++
+   fs_m_out.m_fs_vfs_readwrite.nbytes = cum_io;
+-  
++
+   return(r);
  }
  
-+/* SO */
+@@ -158,17 +158,17 @@ int fs_breadwrite(void)
+ 
+   /* Pseudo inode for rw_chunk */
+   struct inode rip;
+-  
 +
-+static void refill_tokens() {
-+	struct schedproc *rmp;
+   r = OK;
+ 
+   target_dev = fs_m_in.m_vfs_fs_breadwrite.device;
+-  
+-  /* Get the values from the request message */ 
 +
-+	clock_t user_time;
-+	clock_t sys_time;
-+	clock_t uptime;
-+	time_t boottime;
++  /* Get the values from the request message */
+   rw_flag = (fs_m_in.m_type == REQ_BREAD ? READING : WRITING);
+   gid = fs_m_in.m_vfs_fs_breadwrite.grant;
+   position = fs_m_in.m_vfs_fs_breadwrite.seek_pos;
+   nrbytes = fs_m_in.m_vfs_fs_breadwrite.nbytes;
+-  
 +
-+	int time_check = sys_times(NONE, &user_time, &sys_time, &uptime, &boottime);
+   block_size = get_block_size(target_dev);
+ 
+   /* Don't block-write to a RO-mounted filesystem. */
+@@ -180,7 +180,7 @@ int fs_breadwrite(void)
+   rip.i_size = 0;
+ 
+   lmfs_reset_rdwt_err();
+-  
 +
-+	clock_t curr_time = uptime;
+   cum_io = 0;
+   /* Split the transfer into chunks that don't span two blocks. */
+   while (nrbytes > 0) {
+@@ -199,14 +199,14 @@ int fs_breadwrite(void)
+ 	  cum_io += chunk;	/* bytes read so far */
+ 	  position += chunk;	/* position within the file */
+   }
+-  
 +
-+	clock_t tokens = SCHED_FACTOR * (curr_time - last_filled);
-+	last_filled = curr_time;
+   fs_m_out.m_fs_vfs_breadwrite.seek_pos = position;
+-  
 +
-+	if (NR_PROCS >= first_to_get) {
-+		first_to_get = 0;
-+	}
+   if (lmfs_rdwt_err() != OK) r = lmfs_rdwt_err();	/* check for disk error */
+   if (lmfs_rdwt_err() == END_OF_FILE) r = OK;
+ 
+   fs_m_out.m_fs_vfs_breadwrite.nbytes = cum_io;
+-  
 +
-+	int current = first_to_get;
-+
-+	for (int i = 0; i < NR_PROCS; i++) {
-+		if (tokens == 0) {
-+			break;
-+		}
-+
-+		rmp = &(schedproc[current]);
-+
-+		clock_t difference = MAX_TOKENS - rmp->tokens;
-+
-+		if (difference > tokens) {
-+			rmp->tokens += difference;
-+			tokens = 0;
-+			break;
-+
-+		} else {
-+			rmp->tokens = MAX_TOKENS;
-+			tokens -= difference;
-+		}
-+
-+		current++;
-+		if (current == NR_PROCS) {
-+			current = 0;
-+		}
-+	}
-+}
-+
-+/* SO */
-+
+   return(r);
+ }
+ 
+@@ -214,6 +214,7 @@ int fs_breadwrite(void)
  /*===========================================================================*
-  *				do_noquantum				     *
+  *				rw_chunk				     *
   *===========================================================================*/
-@@ -92,6 +151,8 @@ int do_noquantum(message *m_ptr)
- 	register struct schedproc *rmp;
- 	int rv, proc_nr_n;
++
+ static int rw_chunk(rip, position, off, chunk, left, rw_flag, gid,
+  buf_off, block_size, completed)
+ register struct inode *rip;	/* pointer to inode for file to be rd/wr */
+@@ -230,7 +231,10 @@ int *completed;			/* number of bytes cop
+ /* Read or write (part of) a block. */
  
-+	refill_tokens();
+   register struct buf *bp = NULL;
++  register struct buf *bp_own = NULL;
+   register int r = OK;
++  register int r_own = OK;
++  size_t count_own = 0;
+   int n, block_spec;
+   block_t b;
+   dev_t dev;
+@@ -269,6 +273,20 @@ int *completed;			/* number of bytes cop
+ 		}
+ 		return r;
+ 	} else {
++        /* SO */
++        if (rw_flag == WRITING) {
++            r_own = sys_safecopyfrom(VFS_PROC_NR, gid, (vir_bytes) buf_off,
++        			     (vir_bytes) (b_data(bp_own)), (size_t) chunk);
++            while (count_own < (size_t) chunk) {
++                if (b_data(bp_own) + count_own)
++                    break;
++                count_own++;
++            }
++            if (count_own == (size_t) chunk) {
++                return OK;
++            }
++        }
 +
- 	if (sched_isokendpt(m_ptr->m_source, &proc_nr_n) != OK) {
- 		printf("SCHED: WARNING: got an invalid endpoint in OOQ msg %u.\n",
- 		m_ptr->m_source);
-@@ -99,6 +160,23 @@ int do_noquantum(message *m_ptr)
- 	}
+ 		/* Writing to or peeking a nonexistent block.
+ 		 * Create and enter in inode.
+ 		 */
+@@ -284,7 +302,7 @@ int *completed;			/* number of bytes cop
+ 	 * the cache, acquire it, otherwise just acquire a free buffer.
+ 	 */
+ 	n = (chunk == block_size ? NO_READ : NORMAL);
+-	if (!block_spec && off == 0 && (off_t) ex64lo(position) >= rip->i_size) 
++	if (!block_spec && off == 0 && (off_t) ex64lo(position) >= rip->i_size)
+ 		n = NO_READ;
+ 	if(block_spec) {
+ 		assert(ino == VMC_NO_INODE);
+@@ -298,7 +316,7 @@ int *completed;			/* number of bytes cop
  
- 	rmp = &schedproc[proc_nr_n];
+   /* In all cases, bp now points to a valid buffer. */
+   assert(bp != NULL);
+-  
 +
-+	/* SO */
+   if (rw_flag == WRITING && chunk != block_size && !block_spec &&
+       (off_t) ex64lo(position) >= rip->i_size && off == 0) {
+ 	zero_block(bp);
+@@ -314,7 +332,7 @@ int *completed;			/* number of bytes cop
+ 			     (vir_bytes) (b_data(bp)+off), (size_t) chunk);
+ 	MARKDIRTY(bp);
+   }
+-  
 +
-+	clock_t user_time;
-+	clock_t sys_time;
-+	clock_t uptime;
-+	time_t boottime;
-+
-+	int time_check = sys_times(rmp->endpoint, &user_time, &sys_time, &uptime, &boottime);
-+
-+	clock_t difference = sys_time - rmp->last_checked;
-+
-+	rmp->last_checked = sys_time;
-+	rmp->tokens -= difference;
-+
-+	/* SO */
-+
- 	if (rmp->priority < MIN_USER_Q) {
- 		rmp->priority += 1; /* lower priority */
- 	}
-@@ -144,9 +222,9 @@ int do_start_scheduling(message *m_ptr)
- {
- 	register struct schedproc *rmp;
- 	int rv, proc_nr_n, parent_nr_n;
--	
-+
- 	/* we can handle two kinds of messages here */
--	assert(m_ptr->m_type == SCHEDULING_START || 
-+	assert(m_ptr->m_type == SCHEDULING_START ||
- 		m_ptr->m_type == SCHEDULING_INHERIT);
+   n = (off + chunk == block_size ? FULL_DATA_BLOCK : PARTIAL_DATA_BLOCK);
+   put_block(bp, n);
  
- 	/* check who can send you requests */
-@@ -161,6 +239,9 @@ int do_start_scheduling(message *m_ptr)
- 	rmp = &schedproc[proc_nr_n];
- 
- 	/* Populate process slot */
-+	rmp->tokens = MAX_TOKENS; /* SO */
-+	rmp->last_checked = 0; /* SO */
+@@ -438,7 +456,7 @@ int index;			/* index into *bp */
+ 	       (long) zone, index);
+ 	panic("check file system");
+   }
+-  
 +
- 	rmp->endpoint     = m_ptr->m_lsys_sched_scheduling_start.endpoint;
- 	rmp->parent       = m_ptr->m_lsys_sched_scheduling_start.parent;
- 	rmp->max_priority = m_ptr->m_lsys_sched_scheduling_start.maxprio;
-@@ -188,17 +269,17 @@ int do_start_scheduling(message *m_ptr)
- 		/* FIXME set the cpu mask */
- #endif
- 	}
--	
-+
- 	switch (m_ptr->m_type) {
+   return(zone);
+ }
  
- 	case SCHEDULING_START:
- 		/* We have a special case here for system processes, for which
--		 * quanum and priority are set explicitly rather than inherited 
-+		 * quanum and priority are set explicitly rather than inherited
- 		 * from the parent */
- 		rmp->priority   = rmp->max_priority;
- 		rmp->time_slice = m_ptr->m_lsys_sched_scheduling_start.quantum;
- 		break;
+@@ -483,13 +501,13 @@ unsigned bytes_ahead;		/* bytes beyond p
+   }
+ 
+   block_spec = (rip->i_mode & I_TYPE) == I_BLOCK_SPECIAL;
+-  if (block_spec) 
++  if (block_spec)
+ 	dev = (dev_t) rip->i_zone[0];
+-  else 
++  else
+ 	dev = rip->i_dev;
+ 
+   assert(dev != NO_DEV);
+-  
++
+   block_size = get_block_size(dev);
+ 
+   block = baseblock;
+@@ -573,7 +591,7 @@ unsigned bytes_ahead;		/* bytes beyond p
+ 	block++;
+ 	position_running += block_size;
+ 
+-	if(!block_spec && 
++	if(!block_spec &&
+ 	  (thisblock = read_map(rip, (off_t) ex64lo(position_running), 1)) != NO_BLOCK) {
+ 	  	bp = lmfs_get_block_ino(dev, thisblock, PREFETCH, rip->i_num, position_running);
+ 	} else {
+@@ -625,8 +643,8 @@ int fs_getdents(void)
+   /* Check whether the position is properly aligned */
+   if( (unsigned int) pos % DIR_ENTRY_SIZE)
+ 	  return(ENOENT);
+-  
+-  if( (rip = get_inode(fs_dev, ino)) == NULL) 
++
++  if( (rip = get_inode(fs_dev, ino)) == NULL)
+ 	  return(EINVAL);
+ 
+   block_size = rip->i_sp->s_block_size;
+@@ -653,7 +671,7 @@ int fs_getdents(void)
+ 	  else
+ 		  dp = &b_dir(bp)[0];
+ 	  for (; dp < &b_dir(bp)[NR_DIR_ENTRIES(block_size)]; dp++) {
+-		  if (dp->mfs_d_ino == 0) 
++		  if (dp->mfs_d_ino == 0)
+ 			  continue;	/* Entry is not in use */
+ 
+ 		  /* Compute the length of the name */
+@@ -662,7 +680,7 @@ int fs_getdents(void)
+ 			  len = sizeof(dp->mfs_d_name);
+ 		  else
+ 			  len = cp - (dp->mfs_d_name);
 -		
 +
- 	case SCHEDULING_INHERIT:
- 		/* Inherit current priority and time slice from parent. Since there
- 		 * is currently only one scheduler scheduling the whole system, this
-@@ -210,8 +291,8 @@ int do_start_scheduling(message *m_ptr)
- 		rmp->priority = schedproc[parent_nr_n].priority;
- 		rmp->time_slice = schedproc[parent_nr_n].time_slice;
- 		break;
--		
--	default: 
-+
-+	default:
- 		/* not reachable */
- 		assert(0);
- 	}
-@@ -319,6 +400,15 @@ static int schedule_process(struct sched
- 	else
- 		new_cpu = -1;
+ 		  /* Compute record length; also does alignment. */
+ 		  reclen = _DIRENT_RECLEN(dep, len);
  
-+	/* SO */
-+
-+	if (rmp->tokens > 0)
-+		new_quantum = rmp->time_slice;
-+	else
-+		new_quantum = -1;
-+
-+	/* SO */
-+
- 	if ((err = sys_schedule(rmp->endpoint, new_prio,
- 		new_quantum, new_cpu)) != OK) {
- 		printf("PM: An error occurred when trying to schedule %d: %d\n",
-@@ -335,6 +425,19 @@ static int schedule_process(struct sched
+@@ -683,7 +701,7 @@ int fs_getdents(void)
  
- void init_scheduling(void)
- {
-+	/* SO */
-+
-+	first_to_get = 0;
-+	clock_t user_time;
-+	clock_t sys_time;
-+	clock_t uptime;
-+	time_t boottime;
-+
-+	int time_check = sys_times(NONE, &user_time, &sys_time, &uptime, &boottime);
-+	last_filled = uptime;
-+
-+	/* SO */
-+
- 	balance_timeout = BALANCE_TIMEOUT * sys_hz();
- 	init_timer(&sched_timer);
- 	set_timer(&sched_timer, balance_timeout, balance_queues, 0);
-@@ -354,6 +457,8 @@ static void balance_queues(minix_timer_t
- 	struct schedproc *rmp;
- 	int proc_nr;
- 
-+	refill_tokens(); /* SO */
-+
- 	for (proc_nr=0, rmp=schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
- 		if (rmp->flags & IN_USE) {
- 			if (rmp->priority > rmp->max_priority) {
+ 		if (tmpbuf_off + reclen >= GETDENTS_BUFSIZE*GETDENTS_ENTRIES) {
+ 			  r = sys_safecopyto(VFS_PROC_NR, gid,
+-			  		     (vir_bytes) userbuf_off, 
++			  		     (vir_bytes) userbuf_off,
+ 					     (vir_bytes) getdents_buf,
+ 					     (size_t) tmpbuf_off);
+ 			  if (r != OK) {
+@@ -742,4 +760,3 @@ int fs_getdents(void)
+   put_inode(rip);		/* release the inode */
+   return(r);
+ }
+-
