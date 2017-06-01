@@ -5,4 +5,5 @@ cp /root/minix/test.sh .
 cd /root/minix
 cp -r /usr/src/test .
 git add test
+git commit -m "test directory after patch"
 git push
