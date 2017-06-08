@@ -76,7 +76,7 @@ static ssize_t hello_write(devminor_t UNUSED(minor), u64_t position,
     char *ptr;
     int ret;
 
-    if (position >= dev_size) return 0;
+    if (position >= DEVICE_SIZE) return 0;
     if (position + size > DEVICE_SIZE)
         size = (size_t)(DEVICE_SIZE - position);
     ptr = device_buffer + (size_t)position;
@@ -107,7 +107,7 @@ static int lu_state_restore() {
     ds_delete_u32("open_counter");
     open_counter = (int) value;
 
-    ds_retrieve_mem("device_buffer", &device_buffer, &len);
+    ds_retrieve_mem("device_buffer", device_buffer, &len);
     ds_delete_mem("device_buffer");
 
     return OK;
