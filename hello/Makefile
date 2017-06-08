@@ -1,6 +1,5 @@
-# Makefile for the hello driver.
-PROG=	hello
-SRCS=	hello.c
+PROG=	helloN
+SRCS=	helloN.c
 
 DPADD+=	${LIBCHARDRIVER} ${LIBSYS}
 LDADD+=	-lchardriver -lsys
