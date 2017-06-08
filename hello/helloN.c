@@ -57,13 +57,13 @@ static ssize_t hello_read(devminor_t UNUSED(minor), u64_t position,
     char *ptr;
     int ret;
 
-    if (position >= dev_size) return 0;
+    if (position >= DEVICE_SIZE) return 0;
     if (position + size > DEVICE_SIZE)
         size = (size_t)(DEVICE_SIZE - position);
 
     ptr = device_buffer + (size_t)position;
 
-    if ((ret = sys_safecopty(endpt, grant, 0, (vir_bytes) ptr, size)) != OK)
+    if ((ret = sys_safecopyto(endpt, grant, 0, (vir_bytes) ptr, size)) != OK)
         return ret;
 
     return size;
@@ -73,22 +73,16 @@ static ssize_t hello_write(devminor_t UNUSED(minor), u64_t position,
     endpoint_t endpt, cp_grant_id_t grant, size_t size, int UNUSED(flags),
     cdev_id_t UNUSED(id))
 {
-    char input[size];
     char *ptr;
     int ret;
 
     if (position >= dev_size) return 0;
     if (position + size > DEVICE_SIZE)
         size = (size_t)(DEVICE_SIZE - position);
-
     ptr = device_buffer + (size_t)position;
 
-    if ((ret = sys_safecopfrom(endpt, grant, 0, (vir_bytes) input, size)) != OK)
+    if ((ret = sys_safecopyfrom(endpt, grant, 0, (vir_bytes) ptr, size)) != OK)
         return ret;
-
-    for (int i = 0; i < size; i++) {
-        device_buffer[position + i] = input[i];
-    }
 
     return size;
 }
