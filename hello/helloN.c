@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <minix/ds.h>
-//#include "hello.h"
+#include "hello.h"
 #include "helloN.h"
 
 /*
@@ -93,23 +93,6 @@ static ssize_t hello_write(devminor_t UNUSED(minor), u64_t position,
     return size;
 }
 
-static ssize_t hello_write(devminor_t UNUSED(minor), u64_t position,
-    endpoint_t endpt, cp_grant_id_t grant, size_t size, int UNUSED(flags),
-    cdev_id_t UNUSED(id))
-{
-    char *ptr;
-    int ret;
-
-    if (position >= dev_size) return 0;
-    if (position + size > DEVICE_SIZE)
-        size = (size_t)(DEVICE_SIZE - position);
-    ptr = device_buffer + (size_t)position;
-
-    if ((ret = sys_safecopty(endpt, grant, 0, (vir_bytes) ptr, size)) != OK)
-        return ret;
-
-    return size;
-}
 
 static int sef_cb_lu_state_save(int UNUSED(state)) {
 /* Save the state. */
