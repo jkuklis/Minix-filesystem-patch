@@ -40,13 +40,13 @@ static char device_buffer[DEVICE_SIZE];
 static int hello_open(devminor_t UNUSED(minor), int UNUSED(access),
     endpoint_t UNUSED(user_endpt))
 {
-    printf("hello_open(). Called %d time(s).\n", ++open_counter);
+    //printf("hello_open(). Called %d time(s).\n", ++open_counter);
     return OK;
 }
 
 static int hello_close(devminor_t UNUSED(minor))
 {
-    printf("hello_close()\n");
+    //printf("hello_close()\n");
     return OK;
 }
 
