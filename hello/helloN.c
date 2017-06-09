@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <minix/ds.h>
-#include "hello.h"
+//#include "hello.h"
 #include "helloN.h"
 
 /*
@@ -138,6 +138,8 @@ static void sef_local_startup()
     /* Let SEF perform startup. */
     sef_startup();
 }
+
+#define HELLO_MESSAGE "Hello, World!\n"
 
 static int sef_cb_init(int type, sef_init_info_t *UNUSED(info))
 {
